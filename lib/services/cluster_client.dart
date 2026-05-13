@@ -19,9 +19,9 @@
 //     try {
 //      // _client = await ZenohClient.connect(ZenohConfig());
 //    _client = await ZenohClient.connect(
-//   ZenohConfig(
-//     mode: ZenohMode.client,       // client mode since you're connecting to a specific peer
-//     locator: "udp/127.0.0.1:7447",  // ← vehicle's IP
+//      ZenohConfig(
+//     mode: ZenohMode.client,       // client mode 
+//     locator: "udp/127.0.0.1:7447",  // vehicle's IP
 //   ),
 // );
 
