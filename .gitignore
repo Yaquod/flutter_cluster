@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+# Zenoh native binaries (run setup.sh to regenerate)
+linux/libs/
