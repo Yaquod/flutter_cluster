@@ -1,156 +1,99 @@
+import 'dart:ffi' as ffi;
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'dart:async';
-import 'package:zenoh_dart/zenoh_dart.dart';
-import '../proto/vehicle_frame.pb.dart';
+import 'package:ffi/ffi.dart' as pkgffi;
 
-class ClusterClient {
-  final String keyExpr;
-  ZenohClient? _client;
-  ZenohSubscriber? _subscriber;
-  final _controller = StreamController<VehicleFrame>.broadcast();
+typedef _InitApiNative = ffi.IntPtr Function(ffi.Pointer<ffi.Void>);
+typedef _InitApi       = int      Function(ffi.Pointer<ffi.Void>);
 
-  ClusterClient({this.keyExpr = 'autoware/cluster'});
-
-  Stream<VehicleFrame> subscribe() {
-    _connect();
-    return _controller.stream;
-  }
-
-  Future<void> _connect() async {
-    try {
-     // _client = await ZenohClient.connect(ZenohConfig());
-   _client = await ZenohClient.connect(
-     ZenohConfig(
-    mode: ZenohMode.client,       // client mode 
-    locator: "udp/127.0.0.1:7447",  // vehicle's IP
-  ),
+typedef _StartNative = ffi.Int32 Function(
+  ffi.Pointer<ffi.Char>,
+  ffi.Pointer<ffi.Char>,
+  ffi.Int64,
+);
+typedef _Start = int Function(
+  ffi.Pointer<ffi.Char>,
+  ffi.Pointer<ffi.Char>,
+  int,
 );
 
-     _subscriber = await _client!.subscribe(keyExpr);
+typedef _StopNative = ffi.Void Function();
+typedef _Stop       = void    Function();
 
-      _subscriber!.stream.listen(
-        (ZenohSample sample) {
-          try {
-           
-            final frame = VehicleFrame.fromBuffer(sample.payload);
-            _controller.add(frame);
-          } catch (e) {
-            _controller.addError('Proto decode error: $e');
-          }
-        },
-        onError: (e) => _controller.addError('Zenoh stream error: $e'),
-      );
+class ClusterClient {
+  ClusterClient({
+    this.locator = 'udp/127.0.0.1:7447',
+    this.keyExpr  = 'autoware/cluster',
+  });
 
+  final String locator;
+  final String keyExpr;
 
+  RawReceivePort?              _port;
+  StreamController<Uint8List>? _controller;
+  bool _running = false;
 
-    } catch (e) {
-      _controller.addError('Zenoh connect error: $e');
+  late final ffi.DynamicLibrary _lib;
+  late final _InitApi _initApi;
+  late final _Start   _start;
+  late final _Stop    _stop;
+
+  Stream<Uint8List> subscribe() {
+    if (_running) throw StateError('Already subscribed');
+
+    _lib = ffi.DynamicLibrary.open('libcluster_bridge.so');
+
+    _initApi = _lib.lookupFunction<_InitApiNative, _InitApi>(
+      'cluster_bridge_init_dart_api',
+    );
+    _start = _lib.lookupFunction<_StartNative, _Start>(
+      'cluster_bridge_start',
+    );
+    _stop = _lib.lookupFunction<_StopNative, _Stop>(
+      'cluster_bridge_stop',
+    );
+
+    // Initialize dart_api_dl BEFORE any Zenoh callbacks can fire
+    _initApi(ffi.NativeApi.initializeApiDLData);
+
+    _controller = StreamController<Uint8List>.broadcast();
+
+    _port = RawReceivePort((dynamic msg) {
+      if (msg is Uint8List && !(_controller!.isClosed)) {
+        _controller!.add(msg);
+      }
+    });
+
+    final locPtr = locator.toNativeUtf8(allocator: pkgffi.calloc);
+    final keyPtr = keyExpr.toNativeUtf8(allocator: pkgffi.calloc);
+
+    final rc = _start(
+      locPtr.cast<ffi.Char>(),
+      keyPtr.cast<ffi.Char>(),
+      _port!.sendPort.nativePort,
+    );
+
+    pkgffi.calloc.free(locPtr);
+    pkgffi.calloc.free(keyPtr);
+
+    if (rc != 0) {
+      _port!.close();
+      _controller!.close();
+      throw StateError('cluster_bridge_start failed: code $rc');
     }
+
+    _running = true;
+    return _controller!.stream;
   }
 
-  Future<void> shutdown() async {
-    if (_client != null && _subscriber != null) {
-      await _client!.undeclareSubscriber(_subscriber!);
-    }
-    await _client?.close();
-    await _controller.close();
+  void shutdown() {
+    if (!_running) return;
+    _running = false;
+    _stop();
+    _port?.close();
+    _port = null;
+    _controller?.close();
+    _controller = null;
   }
 }
-
-
-
-
-// import 'dart:async';
-// import 'dart:isolate';
-// import 'dart:ffi';
-// import 'package:zenoh_dart/zenoh_dart.dart';
-// import '../proto/vehicle_frame.pb.dart';
-
-// class ClusterClient {
-//   final String keyExpr;
-//   ZenohClient? _client;
-//   ZenohSubscriber? _subscriber;
-//   final _controller = StreamController<VehicleFrame>.broadcast();
-//   bool _isConnected = false;
-//   bool _disposed = false;
-
-//   ClusterClient({this.keyExpr = 'autoware/cluster'});
-
-//   Stream<VehicleFrame> subscribe() {
-//     _connect().catchError((e) {
-//       _controller.addError('Connection failed: $e');
-//     });
-//     return _controller.stream;
-//   }
-
-//   Future<void> _connect() async {
-//     if (_isConnected || _disposed) return;
-//     _isConnected = true;
-
-//     try {
-//       _client = await ZenohClient.connect(
-//         ZenohConfig(
-//           mode: ZenohMode.client,
-//           locator: "udp/127.0.0.1:7447",
-//         ),
-//       );
-
-//       _subscriber = await _client!.subscribe(keyExpr);
-
-//       // Use a ReceivePort as a thread-safe bridge
-//       final receivePort = ReceivePort();
-//       final sendPort = receivePort.sendPort;
-
-//       // Listen on the Dart isolate side
-//       receivePort.listen((dynamic message) {
-//         if (_disposed) {
-//           receivePort.close();
-//           return;
-//         }
-//         if (message is List<int>) {
-//           try {
-//             final frame = VehicleFrame.fromBuffer(message);
-//             _controller.add(frame);
-//           } catch (e) {
-//             _controller.addError('Proto decode error: $e');
-//           }
-//         }
-//       });
-
-//       // Poll the zenoh stream using a Timer instead of stream.listen
-//       // This keeps everything on the Dart isolate thread
-//       Timer.periodic(const Duration(milliseconds: 10), (timer) async {
-//         if (_disposed) {
-//           timer.cancel();
-//           receivePort.close();
-//           return;
-//         }
-//         // Check for pending samples without blocking
-//         try {
-//           await for (final sample in _subscriber!.stream.timeout(
-//             const Duration(milliseconds: 1),
-//             onTimeout: (sink) => sink.close(),
-//           )) {
-//             if (!_disposed) {
-//               sendPort.send(sample.payload.toList());
-//             }
-//           }
-//         } catch (_) {
-//           // timeout is expected, continue
-//         }
-//       });
-
-//     } catch (e) {
-//       _isConnected = false;
-//       _controller.addError('Zenoh connect error: $e');
-//     }
-//   }
-
-//   Future<void> shutdown() async {
-//     _disposed = true;
-//     if (_client != null && _subscriber != null) {
-//       await _client!.undeclareSubscriber(_subscriber!);
-//     }
-//     await _client?.close();
-//     await _controller.close();
-//   }
-// }
