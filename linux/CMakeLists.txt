@@ -36,65 +36,8 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 
-# ── Zenoh bridge ──────────────────────────────────────────────────────────────
-set(BRIDGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native/zenoh_bridge")
-
-# Find zenoh-c
-# For Yocto cross-compilation, set -DCMAKE_PREFIX_PATH=<sysroot>/usr
-find_package(zenohc REQUIRED)
-
-# Determine DART_SDK path
-# Order of precedence:
-#   1. -DDART_SDK=<path>  (CMake cache variable, set manually or by Yocto toolchain)
-#   2. $ENV{DART_SDK}     (environment variable)
-#   3. $ENV{FLUTTER_ROOT}/bin/cache/dart-sdk
-#   4. $ENV{HOME}/flutter/bin/cache/dart-sdk  (common dev setup fallback)
-if(NOT DART_SDK)
-  if(DEFINED ENV{DART_SDK})
-    set(DART_SDK "$ENV{DART_SDK}")
-  elseif(DEFINED ENV{FLUTTER_ROOT})
-    set(DART_SDK "$ENV{FLUTTER_ROOT}/bin/cache/dart-sdk")
-  elseif(DEFINED ENV{HOME})
-    set(DART_SDK "$ENV{HOME}/flutter/bin/cache/dart-sdk")
-  else()
-    message(FATAL_ERROR
-      "DART_SDK not set. Pass -DDART_SDK=<path> to cmake or "
-      "set FLUTTER_ROOT environment variable."
-    )
-  endif()
-endif()
-message(STATUS "[bridge] DART_SDK = ${DART_SDK}")
-
-# Find dart_api_dl files
-find_file(DART_API_DL_H dart_api_dl.h
-  PATHS
-    "${DART_SDK}/include"
-)
-find_file(DART_API_DL_C dart_api_dl.c
-  PATHS
-    "${DART_SDK}/include"
-)
-if(NOT DART_API_DL_H OR NOT DART_API_DL_C)
-  message(FATAL_ERROR
-    "[bridge] dart_api_dl.h/c not found at ${DART_SDK}/include/. "
-    "Set DART_SDK correctly."
-  )
-endif()
-get_filename_component(DART_API_DL_DIR "${DART_API_DL_H}" DIRECTORY)
-
-add_library(cluster_bridge SHARED
-  "${BRIDGE_DIR}/src/cluster_bridge.c"
-  "${DART_API_DL_C}"
-)
-target_include_directories(cluster_bridge PRIVATE
-  "${BRIDGE_DIR}/include"
-  "${DART_API_DL_DIR}"
-)
-target_link_libraries(cluster_bridge PRIVATE ${ZENOH_LIB})
-set_target_properties(cluster_bridge PROPERTIES
-  OUTPUT_NAME "cluster_bridge"
-  PREFIX      "lib"
-)
+# ── Zenoh bridge is now built from native/zenoh_bridge/CMakeLists.txt ─────────
+# This file is the Flutter Linux runner build only.
 # ─────────────────────────────────────────────────────────────────────────────
 
 add_subdirectory("runner")
@@ -135,11 +78,6 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endforeach(bundled_library)
-
-# Install the zenoh bridge library
-install(TARGETS cluster_bridge
-  LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
 
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
