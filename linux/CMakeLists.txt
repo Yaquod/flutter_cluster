@@ -40,44 +40,44 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 set(BRIDGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../native/zenoh_bridge")
 
 # Find zenoh-c
-find_package(zenohc QUIET)
-if(zenohc_FOUND)
-  message(STATUS "[bridge] Found zenoh-c via cmake")
-  set(ZENOH_LIB zenohc::lib)
-else()
-  find_library(ZENOHC_LIB NAMES zenohc PATHS /usr/local/lib /usr/lib)
-  find_path(ZENOHC_INCLUDE NAMES zenoh.h PATHS /usr/local/include /usr/include)
-  if(NOT ZENOHC_LIB OR NOT ZENOHC_INCLUDE)
-    message(FATAL_ERROR "[bridge] zenoh-c not found. Install it to /usr/local.")
+# For Yocto cross-compilation, set -DCMAKE_PREFIX_PATH=<sysroot>/usr
+find_package(zenohc REQUIRED)
+
+# Determine DART_SDK path
+# Order of precedence:
+#   1. -DDART_SDK=<path>  (CMake cache variable, set manually or by Yocto toolchain)
+#   2. $ENV{DART_SDK}     (environment variable)
+#   3. $ENV{FLUTTER_ROOT}/bin/cache/dart-sdk
+#   4. $ENV{HOME}/flutter/bin/cache/dart-sdk  (common dev setup fallback)
+if(NOT DART_SDK)
+  if(DEFINED ENV{DART_SDK})
+    set(DART_SDK "$ENV{DART_SDK}")
+  elseif(DEFINED ENV{FLUTTER_ROOT})
+    set(DART_SDK "$ENV{FLUTTER_ROOT}/bin/cache/dart-sdk")
+  elseif(DEFINED ENV{HOME})
+    set(DART_SDK "$ENV{HOME}/flutter/bin/cache/dart-sdk")
+  else()
+    message(FATAL_ERROR
+      "DART_SDK not set. Pass -DDART_SDK=<path> to cmake or "
+      "set FLUTTER_ROOT environment variable."
+    )
   endif()
-  message(STATUS "[bridge] Found zenoh-c at ${ZENOHC_LIB}")
-  add_library(zenohc_imported SHARED IMPORTED)
-  set_target_properties(zenohc_imported PROPERTIES
-    IMPORTED_LOCATION ${ZENOHC_LIB}
-    INTERFACE_INCLUDE_DIRECTORIES ${ZENOHC_INCLUDE}
-  )
-  set(ZENOH_LIB zenohc_imported)
 endif()
+message(STATUS "[bridge] DART_SDK = ${DART_SDK}")
 
 # Find dart_api_dl files
 find_file(DART_API_DL_H dart_api_dl.h
   PATHS
-    "$ENV{HOME}/flutter/bin/cache/dart-sdk/include"
-    "${FLUTTER_ROOT}/bin/cache/dart-sdk/include"
-    "/usr/local/include"
-    "/usr/include"
+    "${DART_SDK}/include"
 )
 find_file(DART_API_DL_C dart_api_dl.c
   PATHS
-    "$ENV{HOME}/flutter/bin/cache/dart-sdk/include"
-    "${FLUTTER_ROOT}/bin/cache/dart-sdk/include"
-    "/usr/local/include"
-    "/usr/include"
+    "${DART_SDK}/include"
 )
 if(NOT DART_API_DL_H OR NOT DART_API_DL_C)
   message(FATAL_ERROR
-    "[bridge] dart_api_dl.h/c not found. "
-    "Install Flutter to ~/flutter or set FLUTTER_ROOT."
+    "[bridge] dart_api_dl.h/c not found at ${DART_SDK}/include/. "
+    "Set DART_SDK correctly."
   )
 endif()
 get_filename_component(DART_API_DL_DIR "${DART_API_DL_H}" DIRECTORY)

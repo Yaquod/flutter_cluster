@@ -50,3 +50,6 @@ linux/libs/
 # Native bridge build artifacts
 native/zenoh_bridge/build/
 linux/libcluster_bridge.so
+
+# Runtime configuration (gitignored; .env.example is the committed template)
+.env

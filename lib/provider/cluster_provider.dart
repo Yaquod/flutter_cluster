@@ -85,9 +85,11 @@ class VehicleFrameNotifier extends ChangeNotifier {
       onError: (e) {
         _error = e.toString();
         notifyListeners();
+        _client.shutdown();
         Future.delayed(const Duration(seconds: 3), _startListening);
       },
       onDone: () {
+        _client.shutdown();
         Future.delayed(const Duration(seconds: 1), _startListening);
       },
       cancelOnError: false,

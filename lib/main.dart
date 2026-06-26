@@ -62,17 +62,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_cluster/screen/cluster_screen.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/cluster_client.dart';
 import 'provider/cluster_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await dotenv.load(fileName: '.env', isOptional: true);
+
+  final locator  = dotenv.env['ZENOH_LOCATOR'] ?? 'udp/127.0.0.1:7447';
+  final keyExpr  = dotenv.env['ZENOH_KEY_EXPR'] ?? 'autoware/cluster';
+  final libPath  = dotenv.env['ZENOH_LIBRARY_PATH'] ?? 'libcluster_bridge.so';
+
   final client = ClusterClient(
-    // locator: 'udp/127.0.0.1:7447',  // ADDED
-    // keyExpr: 'autoware/cluster',
-     locator: 'udp/127.0.0.1:7447',          // empty = peer mode, no explicit connect
-  keyExpr: 'autoware/cluster',
+    locator: locator,
+    keyExpr: keyExpr,
+    libraryPath: libPath,
   );
 
   runApp(
